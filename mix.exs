@@ -8,8 +8,8 @@ defmodule ScrivenerHtml.Mixfile do
       version: @version,
       elixir: "~> 1.2",
       name: "scrivener_html",
-      source_url: "https://github.com/mgwidmann/scrivener_html",
-      homepage_url: "https://github.com/mgwidmann/scrivener_html",
+      source_url: "https://github.com/carmaproject/scrivener_html",
+      homepage_url: "https://github.com/carmaproject/scrivener_html",
       elixirc_paths: elixirc_paths(Mix.env()),
       build_embedded: Mix.env() == :prod,
       start_permanent: Mix.env() == :prod,
@@ -48,8 +48,8 @@ defmodule ScrivenerHtml.Mixfile do
   defp deps do
     [
       {:scrivener, "~> 1.2 or ~> 2.0"},
-      {:phoenix_html, "~> 2.2"},
-      {:phoenix, "~> 1.0 and < 1.6.0", optional: true},
+      {:phoenix_html, "~> 3.0.4"},
+      {:phoenix, "~> 1.0 and < 1.7.0", optional: true},
       {:plug, "~> 1.1"},
       {:ex_doc, "~> 0.19", only: :dev},
       {:earmark, "~> 1.1", only: :dev}
@@ -60,7 +60,7 @@ defmodule ScrivenerHtml.Mixfile do
     [
       maintainers: ["Matt Widmann"],
       licenses: ["MIT"],
-      links: %{github: "https://github.com/mgwidmann/scrivener_html"}
+      links: %{github: "https://github.com/carmaproject/scrivener_html"}
     ]
   end
 
