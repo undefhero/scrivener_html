@@ -48,7 +48,8 @@ defmodule ScrivenerHtml.Mixfile do
   defp deps do
     [
       {:scrivener, "~> 1.2 or ~> 2.0"},
-      {:phoenix_html, "~> 3.0.4"},
+      {:paginator, "~> 1.0.4"},
+      {:phoenix_html, "~> 2.14"},
       {:phoenix, "~> 1.0 and < 1.7.0", optional: true},
       {:plug, "~> 1.1"},
       {:ex_doc, "~> 0.19", only: :dev},

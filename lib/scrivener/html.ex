@@ -117,29 +117,23 @@ defmodule Scrivener.HTML do
     path = opts[:path] || find_path_fn(conn && paginator.entries, args)
     params = Keyword.drop(opts, Keyword.keys(@defaults) ++ [:path, :hide_single])
 
-    hide_single_result = opts[:hide_single] && paginator.total_pages < 2
-
-    if hide_single_result do
-      Phoenix.HTML.raw(nil)
-    else
-      # Ensure ordering so pattern matching is reliable
-      _pagination_links(paginator,
-        view_style: merged_opts[:view_style],
-        path: path,
-        args: [conn, merged_opts[:action]] ++ args,
-        page_param: merged_opts[:page_param],
-        params: params
-      )
-    end
+    # Ensure ordering so pattern matching is reliable
+    _pagination_links(paginator,
+      view_style: merged_opts[:view_style],
+      path: path,
+      args: [conn, merged_opts[:action]] ++ args,
+      page_param: merged_opts[:page_param],
+      params: params
+    )
   end
 
-  def pagination_links(%Scrivener.Page{} = paginator),
+  def pagination_links(%Paginator.Page{} = paginator),
     do: pagination_links(nil, paginator, [], [])
 
-  def pagination_links(%Scrivener.Page{} = paginator, opts),
+  def pagination_links(%Paginator.Page{} = paginator, opts),
     do: pagination_links(nil, paginator, [], opts)
 
-  def pagination_links(conn, %Scrivener.Page{} = paginator),
+  def pagination_links(conn, %Paginator.Page{} = paginator),
     do: pagination_links(conn, paginator, [], [])
 
   def pagination_links(conn, paginator, [{_, _} | _] = opts),
@@ -315,8 +309,8 @@ defmodule Scrivener.HTML do
     )
   end
 
-  defp page({:ellipsis, text}, _url_params, _args, _page_param, _path, paginator, style) do
-    content_tag(:li, class: li_classes_for_style(paginator, :ellipsis, style) |> Enum.join(" ")) do
+  defp page({:ellipsis, text} = value, _url_params, _args, _page_param, _path, paginator, style) do
+    content_tag(:li, class: ["disabled"] ++ li_classes_for_style(paginator, :ellipsis, style) |> Enum.join(" ")) do
       style
       |> ellipsis_tag
       |> content_tag(safe(text),
@@ -325,28 +319,29 @@ defmodule Scrivener.HTML do
     end
   end
 
-  defp page({text, page_number}, url_params, args, page_param, path, paginator, :semantic) do
-    params_with_page =
-      url_params ++
-        case page_number > 1 do
-          true -> [{page_param, page_number}]
-          false -> []
-        end
+  defp page({">>", cursor} = value, url_params, args, _page_param, path, paginator, style) do
+    params_with_cursor = url_params ++ [{:after, cursor}]
+    apply_page(value, url_params, args, params_with_cursor, path, paginator, style)
+  end
 
-    to = apply(path, args ++ [params_with_page])
+  defp page({"<<", cursor} = value, url_params, args, page_param, path, paginator, style) do
+    params_with_cursor = url_params ++ [{:before, cursor}]
+    apply_page(value, url_params, args, params_with_cursor, path, paginator, style)
+  end
+
+  defp page(value, url_params, args, page_param, path, paginator, style) do
+    apply_page(value, url_params, args, page_param, path, paginator, style)
+  end
+
+  defp apply_page({text, page_number} = value, url_params, args, params_with_cursor, path, paginator, :semantic) do
+    to = apply(path, args ++ [params_with_cursor])
 
     if to do
-      if active_page?(paginator, page_number) do
-        content_tag(:a, safe(text),
-          class: link_classes_for_style(paginator, page_number, :semantic) |> Enum.join(" ")
-        )
-      else
-        link(safe(text),
-          to: to,
-          rel: Scrivener.HTML.SEO.rel(paginator, page_number),
-          class: li_classes_for_style(paginator, page_number, :semantic) |> Enum.join(" ")
-        )
-      end
+      link(safe(text),
+        to: to,
+        rel: Scrivener.HTML.SEO.rel(paginator, page_number),
+        class: li_classes_for_style(paginator, page_number, :semantic) |> Enum.join(" ")
+      )
     else
       content_tag(:a, safe(text),
         class: li_classes_for_style(paginator, page_number, :semantic) |> Enum.join(" ")
@@ -354,29 +349,16 @@ defmodule Scrivener.HTML do
     end
   end
 
-  defp page({text, page_number}, url_params, args, page_param, path, paginator, style) do
-    params_with_page =
-      url_params ++
-        case page_number > 1 do
-          true -> [{page_param, page_number}]
-          false -> []
-        end
-
+  defp apply_page({text, page_number} = value, url_params, args, params_with_cursor, path, paginator, style) do
     content_tag :li, class: li_classes_for_style(paginator, page_number, style) |> Enum.join(" ") do
-      to = apply(path, args ++ [params_with_page])
+      to = apply(path, args ++ [params_with_cursor])
 
       if to do
-        if active_page?(paginator, page_number) do
-          content_tag(:a, safe(text),
-            class: link_classes_for_style(paginator, page_number, style) |> Enum.join(" ")
-          )
-        else
-          link(safe(text),
-            to: to,
-            rel: Scrivener.HTML.SEO.rel(paginator, page_number),
-            class: link_classes_for_style(paginator, page_number, style) |> Enum.join(" ")
-          )
-        end
+        link(safe(text),
+          to: to,
+          rel: Scrivener.HTML.SEO.rel(paginator, page_number),
+          class: link_classes_for_style(paginator, page_number, style) |> Enum.join(" ")
+        )
       else
         style
         |> blank_link_tag()
@@ -387,37 +369,34 @@ defmodule Scrivener.HTML do
     end
   end
 
-  defp active_page?(%{page_number: page_number}, page_number), do: true
-  defp active_page?(_paginator, _page_number), do: false
-
   defp li_classes_for_style(_paginator, :ellipsis, :bootstrap), do: []
 
-  defp li_classes_for_style(paginator, page_number, :bootstrap) do
-    if(paginator.page_number == page_number, do: ["active"], else: [])
+  defp li_classes_for_style(paginator, _page_number, :bootstrap) do
+    ["active"]
   end
 
   defp li_classes_for_style(_paginator, :ellipsis, :bootstrap_v4), do: ["page-item"]
 
-  defp li_classes_for_style(paginator, page_number, :bootstrap_v4) do
-    if(paginator.page_number == page_number, do: ["active", "page-item"], else: ["page-item"])
+  defp li_classes_for_style(paginator, _page_number, :bootstrap_v4) do
+    ["page-item"]
   end
 
   defp li_classes_for_style(_paginator, :ellipsis, :foundation), do: ["ellipsis"]
 
-  defp li_classes_for_style(paginator, page_number, :foundation) do
-    if(paginator.page_number == page_number, do: ["current"], else: [])
+  defp li_classes_for_style(paginator, _page_number, :foundation) do
+    []
   end
 
   defp li_classes_for_style(_paginator, :ellipsis, :semantic), do: ["ellipsis"]
 
-  defp li_classes_for_style(paginator, page_number, :semantic) do
-    if(paginator.page_number == page_number, do: ["active", "item"], else: ["item"])
+  defp li_classes_for_style(paginator, _page_number, :semantic) do
+    ["item"]
   end
 
   defp li_classes_for_style(_paginator, :ellipsis, :materialize), do: []
 
-  defp li_classes_for_style(paginator, page_number, :materialize) do
-    if(paginator.page_number == page_number, do: ["active"], else: ["waves-effect"])
+  defp li_classes_for_style(paginator, _page_number, :materialize) do
+    ["waves-effect"]
   end
 
   defp li_classes_for_style(_paginator, :ellipsis, :bulma), do: []
@@ -472,157 +451,40 @@ defmodule Scrivener.HTML do
   def raw_pagination_links(paginator, options \\ []) do
     options = Keyword.merge(@raw_defaults, options)
 
-    add_first(paginator.page_number, options[:distance], options[:first])
-    |> add_first_ellipsis(
-      paginator.page_number,
-      paginator.total_pages,
-      options[:distance],
-      options[:first]
-    )
-    |> add_previous(paginator.page_number)
-    |> page_number_list(paginator.page_number, paginator.total_pages, options[:distance])
-    |> add_last_ellipsis(
-      paginator.page_number,
-      paginator.total_pages,
-      options[:distance],
-      options[:last]
-    )
-    |> add_last(paginator.page_number, paginator.total_pages, options[:distance], options[:last])
-    |> add_next(paginator.page_number, paginator.total_pages)
+    add_first(paginator.metadata)
+    |> add_ellipsis()
+    |> add_last()
     |> Enum.map(fn
-      :next ->
-        if options[:next], do: {options[:next], paginator.page_number + 1}
+      {:next, next_cursor} ->
+        if options[:next], do: {options[:next], next_cursor}
 
-      :previous ->
-        if options[:previous], do: {options[:previous], paginator.page_number - 1}
+      {:previous, previous_cursor} ->
+        if options[:previous], do: {options[:previous], previous_cursor}
 
-      :first_ellipsis ->
+      :ellipsis ->
         if options[:ellipsis] && options[:first], do: {:ellipsis, options[:ellipsis]}
-
-      :last_ellipsis ->
-        if options[:ellipsis] && options[:last], do: {:ellipsis, options[:ellipsis]}
-
-      :first ->
-        if options[:first], do: {options[:first], 1}
-
-      :last ->
-        if options[:last], do: {options[:last], paginator.total_pages}
-
-      num when is_number(num) ->
-        {num, num}
     end)
     |> Enum.filter(& &1)
   end
 
-  # Computing page number ranges
-  defp page_number_list(list, page, total, distance)
-       when is_integer(distance) and distance >= 1 do
-    list ++
-      Enum.to_list(beginning_distance(page, total, distance)..end_distance(page, total, distance))
+  defp add_first(%{before: nil} = metadata) do
+    {[], metadata}
   end
 
-  defp page_number_list(_list, _page, _total, _distance) do
-    raise "Scrivener.HTML: Distance cannot be less than one."
+  defp add_first(%{before: previous_cursor} = metadata) do
+    {[{:previous, previous_cursor}], metadata}
   end
 
-  # Beginning distance computation
-  # For low page numbers
-  defp beginning_distance(page, _total, distance) when page - distance < 1 do
-    page - (distance + (page - distance - 1))
+  defp add_ellipsis({list, metadata}) do
+    {list ++ [:ellipsis], metadata}
   end
 
-  # For medium to high end page numbers
-  defp beginning_distance(page, total, distance) when page <= total do
-    page - distance
-  end
-
-  # For page numbers over the total number of pages (prevent DOS attack generating too many pages)
-  defp beginning_distance(page, total, distance) when page > total do
-    total - distance
-  end
-
-  # End distance computation
-  # For high end page numbers (prevent DOS attack generating too many pages)
-  defp end_distance(page, total, distance) when page + distance >= total and total != 0 do
-    total
-  end
-
-  # For when there is no pages, cannot trust page number because it is supplied by user potentially (prevent DOS attack)
-  defp end_distance(_page, 0, _distance) do
-    1
-  end
-
-  # For low to mid range page numbers (guard here to ensure crash if something goes wrong)
-  defp end_distance(page, total, distance) when page + distance < total do
-    page + distance
-  end
-
-  # Adding next/prev/first/last links
-  defp add_previous(list, page) when page != 1 do
-    [:previous | list]
-  end
-
-  defp add_previous(list, _page) do
+  defp add_last({list, %{after: nil} = metadata}) do
     list
   end
 
-  defp add_first(page, distance, true) when page - distance > 1 do
-    [1]
-  end
-
-  defp add_first(page, distance, first) when page - distance > 1 and first != false do
-    [:first]
-  end
-
-  defp add_first(_page, _distance, _included) do
-    []
-  end
-
-  defp add_last(list, page, total, distance, true) when page + distance < total do
-    list ++ [total]
-  end
-
-  defp add_last(list, page, total, distance, last)
-       when page + distance < total and last != false do
-    list ++ [:last]
-  end
-
-  defp add_last(list, _page, _total, _distance, _included) do
-    list
-  end
-
-  defp add_next(list, page, total) when page != total and page < total do
-    list ++ [:next]
-  end
-
-  defp add_next(list, _page, _total) do
-    list
-  end
-
-  defp add_first_ellipsis(list, page, total, distance, true) do
-    add_first_ellipsis(list, page, total, distance + 1, nil)
-  end
-
-  defp add_first_ellipsis(list, page, _total, distance, _first)
-       when page - distance > 1 and page > 1 do
-    list ++ [:first_ellipsis]
-  end
-
-  defp add_first_ellipsis(list, _page_number, _total, _distance, _first) do
-    list
-  end
-
-  defp add_last_ellipsis(list, page, total, distance, true) do
-    add_last_ellipsis(list, page, total, distance + 1, nil)
-  end
-
-  defp add_last_ellipsis(list, page, total, distance, _)
-       when page + distance < total and page != total do
-    list ++ [:last_ellipsis]
-  end
-
-  defp add_last_ellipsis(list, _page_number, _total, _distance, _last) do
-    list
+  defp add_last({list, %{after: next_cursor} = metadata}) do
+    list ++ [{:next, next_cursor}]
   end
 
   defp safe({:safe, _string} = whole_string) do
